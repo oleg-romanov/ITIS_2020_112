@@ -11,51 +11,55 @@ import WebKit
 class URLDetailsViewController: UIViewController {
     var pageUrl: URL?
 
+    @IBOutlet private var progressView: UIProgressView!
+    @IBOutlet private var scrollView: UIScrollView!
+    @IBOutlet private var imageViewWidth: NSLayoutConstraint!
+    @IBOutlet private var imageViewHeigth: NSLayoutConstraint!
+    @IBOutlet private var imageView: UIImageView!
+    private var dataTask: URLSessionDownloadTask?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-
         loadURL()
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-
-        webView?.frame = webViewFrame()
-    }
-
-    private var webView: WKWebView?
-
-    private func webViewFrame() -> CGRect {
-        view.bounds.inset(by: UIEdgeInsets(top: view.layoutMargins.top, left: 0, bottom: view.layoutMargins.bottom, right: 0))
     }
 
     private func loadURL() {
         guard let url = pageUrl else { return }
+        let urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue())
+        dataTask = urlSession.downloadTask(with: url)
+        dataTask?.resume()
+    }
+}
 
-        let dataTask = URLSession.shared.dataTask(with: url) { data, response, error in
-            if let data = data {
-                DispatchQueue.main.async {
-                    self.process(data: data)
-                }
+extension URLDetailsViewController: URLSessionDownloadDelegate {
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let data = try! Data(contentsOf: location)
+        print(location.absoluteURL)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.progressView.isHidden = true
+            self.imageView.image = UIImage(data: data)
+            self.imageViewWidth.constant = self.imageView.image?.size.width ?? 0
+            self.imageViewHeigth.constant = self.imageView.image?.size.height ?? 0
+        }
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        if totalBytesExpectedToWrite > 0 {
+                let progress = Float(totalBytesWritten) / Float(totalBytesExpectedToWrite)
+            DispatchQueue.main.async { [weak self] in
+                self?.progressView.progress = progress
             }
         }
-        dataTask.resume()
-    }
-
-    private func process(data: Data) {
-        guard let documentsDirectoryUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            print("Could not create documents directory url")
-            return
-        }
-
-        let htmlDocumentUrl = documentsDirectoryUrl.appendingPathComponent("\(UUID().uuidString).html")
-        guard FileManager.default.createFile(atPath: htmlDocumentUrl.path, contents: data) else {
-            print("Could not create page at url: \(htmlDocumentUrl)")
-            return
-        }
-        let webView = WKWebView()
-        webView.loadFileURL(htmlDocumentUrl, allowingReadAccessTo: htmlDocumentUrl)
-        view.addSubview(webView)
-        webView.frame = webViewFrame()
     }
 }
